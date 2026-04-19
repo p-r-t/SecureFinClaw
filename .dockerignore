@@ -1,3 +1,4 @@
+# Build artifacts
 __pycache__
 *.pyc
 *.pyo
@@ -5,9 +6,46 @@ __pycache__
 *.egg-info
 dist/
 build/
+
+# VCS / CI
 .git
+.github/
+.gitlab-ci.yml
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# Security-sensitive files (NemoClaw #1994)
+# Prevent secrets from leaking into Docker image layers via COPY.
 .env
+.env.*
+.env.local
+.env.production
+.env.staging
+.npmrc
+*.key
+*.pem
+*.pfx
+*.p12
+*.crt
+*_ecdsa
+*_ed25519
+*_rsa
+*_dsa
+*.jks
+.ssh/
+secrets/
+credentials.json
+service-account*.json
+*-credentials.json
+
+# Project-specific
 .assets
 node_modules/
 bridge/dist/
 workspace/
+.claude/
+.venv/
+venv/
+.pytest_cache/

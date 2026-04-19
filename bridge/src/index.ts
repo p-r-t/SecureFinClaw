@@ -23,9 +23,19 @@ import { BridgeServer } from './server.js';
 import { homedir } from 'os';
 import { join } from 'path';
 
+// NemoClaw #1995: use os.homedir() instead of process.env.HOME to prevent
+// env-var manipulation redirecting auth storage to attacker-controlled paths.
 const PORT = parseInt(process.env.BRIDGE_PORT || '3001', 10);
+if (isNaN(PORT) || PORT < 1 || PORT > 65535) {
+  console.error('❌ BRIDGE_PORT must be a valid port number (1-65535)');
+  process.exit(1);
+}
 const AUTH_DIR = process.env.AUTH_DIR || join(homedir(), '.finclaw', 'whatsapp-auth');
 const TOKEN = process.env.BRIDGE_TOKEN || undefined;
+
+if (!TOKEN) {
+  console.warn('⚠️  BRIDGE_TOKEN not set — WebSocket bridge has NO authentication. Set BRIDGE_TOKEN for production use.');
+}
 
 console.log('📊 FinClaw WhatsApp Bridge');
 console.log('========================\n');

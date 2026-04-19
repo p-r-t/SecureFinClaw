@@ -1,6 +1,7 @@
 """Configuration loading utilities."""
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -58,8 +59,15 @@ def save_config(config: Config, config_path: Path | None = None) -> None:
     data = config.model_dump()
     data = convert_to_camel(data)
     
-    with open(path, "w") as f:
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
         json.dump(data, f, indent=2)
+
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        # Best effort on filesystems that do not support POSIX modes.
+        pass
 
 
 def _migrate_config(data: dict) -> dict:

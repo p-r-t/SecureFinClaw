@@ -37,6 +37,16 @@ FinClaw can also **launch meme coins end-to-end**: scan Twitter and RSS feeds fo
 | **Extensible Skills** | Plugin architecture; add custom skills or connect MCP servers |
 | **Production-Ready** | Docker support, async event loop, per-channel session management |
 
+## Agent Guide
+
+If you are onboarding a coding agent or contributor, start with the repository-level docs below before scanning files ad hoc:
+
+- [`AGENTS.md`](AGENTS.md) explains the repo mental model, edit boundaries, persistence layout, and validation strategy.
+- [`CODEBASE.md`](CODEBASE.md) is a compact map of entrypoints, execution flow, package ownership, and common change targets.
+- [`CODE_STYLE.md`](CODE_STYLE.md) defines the repository-specific coding and documentation rules agents should follow.
+
+Important: these repository docs are different from the runtime workspace files created by `finclaw onboard` under `~/.finclaw/workspace/`. The runtime `AGENTS.md`, `SOUL.md`, `USER.md`, and `TOOLS.md` are part of the live agent prompt, not this repository's contributor guide.
+
 ## Roadmap
 
 - [ ] **Automated meme pipeline** — end-to-end automation: monitor social feeds continuously, auto-score viral candidates, and optionally deploy tokens when signals cross a configurable threshold.
@@ -680,6 +690,8 @@ All channels share one interface; enable any combination in `config.json`.
 2. **Agent Loop** — the LLM reasons, calls the **Financial Tool Router** (financial metrics, economics, web, cron), and evaluates its own **Internal Response** in a reflect-and-retry cycle (up to 20 iterations).
 3. **Customized Agent & Personal Profiling** — each response is shaped by the agent's **Soul** (personality), **Memory** (long-term facts), **Financial Profile** (investment preferences), and **Chat & Analysis History**.
 4. **Final Response** — once approved through the profiling layer, the response routes back to the originating channel.
+
+For a coding-agent-oriented reading path, see [`AGENTS.md`](AGENTS.md) and [`CODEBASE.md`](CODEBASE.md).
 
 ## Project Structure
 

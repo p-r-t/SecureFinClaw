@@ -58,9 +58,19 @@ class BaseChannel(ABC):
         """
         pass
     
+    _open_access_warned: bool = False
+    _empty_allowlist_warned: bool = False
+
     def is_allowed(self, sender_id: str) -> bool:
         """
         Check if a sender is allowed to use this bot.
+
+        Security — NemoClaw #1416 fail-closed model:
+        - policy="allowlist" (default): only senders in allow_from are
+          permitted.  If allow_from is empty, ALL messages are DENIED and
+          an error is logged telling the operator to populate the list or
+          explicitly set policy to "open".
+        - policy="open": any sender is permitted (with a one-time warning).
         
         Args:
             sender_id: The sender's identifier.
@@ -68,19 +78,43 @@ class BaseChannel(ABC):
         Returns:
             True if allowed, False otherwise.
         """
+        policy = getattr(self.config, "policy", "allowlist")
         allow_list = getattr(self.config, "allow_from", [])
         
-        # If no allow list, allow everyone
-        if not allow_list:
+        # --- explicit open access ---
+        if policy == "open":
+            if not BaseChannel._open_access_warned:
+                BaseChannel._open_access_warned = True
+                logger.warning(
+                    "⚠️  Channel policy is 'open' — ALL senders are "
+                    "permitted.  Set policy to 'allowlist' and populate "
+                    "allowFrom for production use."
+                )
             return True
+        
+        # --- allowlist mode (default / fail-closed) ---
+        if not allow_list:
+            if not BaseChannel._empty_allowlist_warned:
+                BaseChannel._empty_allowlist_warned = True
+                logger.error(
+                    f"🚫 Channel '{self.name}' policy is 'allowlist' but allow_from is empty — "
+                    "ALL messages are BLOCKED.  Either add user/chat IDs to "
+                    "allowFrom, or set policy to 'open' to allow everyone."
+                )
+            return False
         
         sender_str = str(sender_id)
         if sender_str in allow_list:
             return True
+
+        # Support composite IDs (e.g. Telegram "12345|username").
+        # Only match the *first* part (numeric platform ID) to prevent an
+        # attacker from choosing a username that collides with another user's
+        # numeric ID in the allowlist.  (NemoClaw #1416 pattern)
         if "|" in sender_str:
-            for part in sender_str.split("|"):
-                if part and part in allow_list:
-                    return True
+            primary_id = sender_str.split("|", 1)[0]
+            if primary_id and primary_id in allow_list:
+                return True
         return False
     
     async def _handle_message(

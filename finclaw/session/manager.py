@@ -1,6 +1,7 @@
 """Session management for conversation history."""
 
 import json
+import os
 from pathlib import Path
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -132,7 +133,9 @@ class SessionManager:
         """Save a session to disk."""
         path = self._get_session_path(session.key)
 
-        with open(path, "w") as f:
+        # Session files may contain sensitive conversation history.
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as f:
             metadata_line = {
                 "_type": "metadata",
                 "created_at": session.created_at.isoformat(),
@@ -143,6 +146,12 @@ class SessionManager:
             f.write(json.dumps(metadata_line) + "\n")
             for msg in session.messages:
                 f.write(json.dumps(msg) + "\n")
+
+        try:
+            os.chmod(path, 0o600)
+        except OSError:
+            # Best effort on filesystems that do not support POSIX modes.
+            pass
 
         self._cache[session.key] = session
     

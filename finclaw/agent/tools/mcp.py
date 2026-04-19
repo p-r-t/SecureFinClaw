@@ -2,6 +2,7 @@
 
 from contextlib import AsyncExitStack
 from typing import Any
+from urllib.parse import urlparse
 
 from loguru import logger
 
@@ -58,6 +59,18 @@ async def connect_mcp_servers(
                 )
                 read, write = await stack.enter_async_context(stdio_client(params))
             elif cfg.url:
+                # Validate MCP HTTP endpoint URL — prevent SSRF to internal
+                # services (NemoClaw SSRF patterns).
+                parsed = urlparse(cfg.url)
+                if parsed.scheme not in ("http", "https"):
+                    logger.warning(f"MCP server '{name}': invalid URL scheme '{parsed.scheme}', skipping")
+                    continue
+                from finclaw.agent.tools.web import _validate_public_host_sync
+                host_ok, host_err, _ = _validate_public_host_sync(parsed.hostname)
+                if not host_ok:
+                    logger.warning(f"MCP server '{name}': URL blocked ({host_err}), skipping")
+                    continue
+
                 from mcp.client.streamable_http import streamable_http_client
                 read, write, _ = await stack.enter_async_context(
                     streamable_http_client(cfg.url)

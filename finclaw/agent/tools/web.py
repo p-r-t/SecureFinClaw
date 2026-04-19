@@ -1,9 +1,11 @@
 """Web tools: web_search and web_fetch."""
 
 import html
+import ipaddress
 import json
 import os
 import re
+import socket
 from typing import Any
 from urllib.parse import urlparse
 
@@ -14,6 +16,11 @@ from finclaw.agent.tools.base import Tool
 # Shared constants
 USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_7_2) AppleWebKit/537.36"
 MAX_REDIRECTS = 5  # Limit redirects to prevent DoS attacks
+BLOCKED_HOSTNAMES = {
+    "localhost",
+    "localhost.localdomain",
+    "metadata.google.internal",
+}
 
 
 def _strip_tags(text: str) -> str:
@@ -38,9 +45,76 @@ def _validate_url(url: str) -> tuple[bool, str]:
             return False, f"Only http/https allowed, got '{p.scheme or 'none'}'"
         if not p.netloc:
             return False, "Missing domain"
+        if p.username or p.password:
+            return False, "Credentials in URL are not allowed"
+        if (p.hostname or "").lower() in BLOCKED_HOSTNAMES:
+            return False, "Blocked hostname"
         return True, ""
     except Exception as e:
         return False, str(e)
+
+
+def _is_blocked_ip(ip_str: str) -> bool:
+    """Return True if IP belongs to private, local, or otherwise non-public range."""
+    try:
+        ip = ipaddress.ip_address(ip_str)
+        return any(
+            [
+                ip.is_private,
+                ip.is_loopback,
+                ip.is_link_local,
+                ip.is_reserved,
+                ip.is_multicast,
+                ip.is_unspecified,
+            ]
+        )
+    except ValueError:
+        return True
+
+
+def _validate_public_host_sync(hostname: str | None) -> tuple[bool, str, str | None]:
+    """Reject hostnames that resolve to local/private network addresses.
+
+    Returns (ok, error_message, pinned_ip).  When *ok* is True the caller
+    should use *pinned_ip* (if non-None) to connect instead of the hostname,
+    preventing DNS-rebinding TOCTOU attacks (NemoClaw #1993).
+    """
+    if not hostname:
+        return False, "Missing hostname", None
+    host = hostname.strip().lower().rstrip(".")
+    if not host:
+        return False, "Missing hostname", None
+    if host in BLOCKED_HOSTNAMES or host.endswith(".local"):
+        return False, "Blocked hostname", None
+
+    # If hostname is a literal IP address, validate directly.
+    try:
+        ipaddress.ip_address(host)
+        if _is_blocked_ip(host):
+            return False, "Blocked IP address", None
+        return True, "", host
+    except ValueError:
+        pass
+
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except Exception as e:
+        return False, f"DNS resolution failed: {e}", None
+
+    if not infos:
+        return False, "No DNS records", None
+
+    pinned_ip: str | None = None
+    for info in infos:
+        sockaddr = info[4]
+        if not sockaddr:
+            continue
+        ip_str = sockaddr[0]
+        if _is_blocked_ip(ip_str):
+            return False, f"Resolved to blocked IP: {ip_str}", None
+        if pinned_ip is None:
+            pinned_ip = ip_str
+    return True, "", pinned_ip
 
 
 class TavilySearchTool(Tool):
@@ -188,14 +262,39 @@ class WebFetchTool(Tool):
         if not is_valid:
             return json.dumps({"error": f"URL validation failed: {error_msg}", "url": url})
 
+        parsed = urlparse(url)
+        host_ok, host_err, pinned_ip = _validate_public_host_sync(parsed.hostname)
+        if not host_ok:
+            return json.dumps({"error": f"URL host blocked: {host_err}", "url": url})
+
+        # DNS-pinned URL: replace hostname with resolved IP to prevent DNS
+        # rebinding between validation and the actual HTTP request (CWE-918,
+        # inspired by NemoClaw #1993).  For HTTPS we keep the original hostname
+        # so TLS certificate validation still works (the cert is bound to the
+        # hostname, which itself prevents rebinding to a different server).
+        fetch_url = url
+        headers = {"User-Agent": USER_AGENT}
+        if pinned_ip and parsed.scheme == "http" and parsed.hostname:
+            fetch_url = url.replace(parsed.hostname, pinned_ip, 1)
+            headers["Host"] = parsed.hostname
+
         try:
             async with httpx.AsyncClient(
                 follow_redirects=True,
                 max_redirects=MAX_REDIRECTS,
                 timeout=30.0
             ) as client:
-                r = await client.get(url, headers={"User-Agent": USER_AGENT})
+                r = await client.get(fetch_url, headers=headers)
                 r.raise_for_status()
+
+            final_parsed = urlparse(str(r.url))
+            final_valid, final_error = _validate_url(str(r.url))
+            if not final_valid:
+                return json.dumps({"error": f"Final URL validation failed: {final_error}", "url": str(r.url)})
+
+            final_host_ok, final_host_err, _ = _validate_public_host_sync(final_parsed.hostname)
+            if not final_host_ok:
+                return json.dumps({"error": f"Final URL host blocked: {final_host_err}", "url": str(r.url)})
             
             ctype = r.headers.get("content-type", "")
             

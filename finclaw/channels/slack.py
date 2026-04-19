@@ -177,6 +177,11 @@ class SlackChannel(BaseChannel):
             },
         )
 
+    def is_allowed(self, sender_id: str) -> bool:
+        # Slack has its own complex permission logic in _is_allowed based on channel_type.
+        # Bypass BaseChannel's default check so we don't double-block.
+        return True
+
     def _is_allowed(self, sender_id: str, chat_id: str, channel_type: str) -> bool:
         if channel_type == "im":
             if not self.config.dm.enabled:

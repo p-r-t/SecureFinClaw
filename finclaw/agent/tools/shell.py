@@ -3,6 +3,7 @@
 import asyncio
 import os
 import re
+import shlex
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +20,7 @@ class ExecTool(Tool):
         deny_patterns: list[str] | None = None,
         allow_patterns: list[str] | None = None,
         restrict_to_workspace: bool = False,
+        use_shell: bool = True,
     ):
         self.timeout = timeout
         self.working_dir = working_dir
@@ -34,6 +36,7 @@ class ExecTool(Tool):
         ]
         self.allow_patterns = allow_patterns or []
         self.restrict_to_workspace = restrict_to_workspace
+        self.use_shell = use_shell
     
     @property
     def name(self) -> str:
@@ -67,12 +70,23 @@ class ExecTool(Tool):
             return guard_error
         
         try:
-            process = await asyncio.create_subprocess_shell(
-                command,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=cwd,
-            )
+            if self.use_shell:
+                process = await asyncio.create_subprocess_shell(
+                    command,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    cwd=cwd,
+                )
+            else:
+                argv = shlex.split(command)
+                if not argv:
+                    return "Error: Empty command"
+                process = await asyncio.create_subprocess_exec(
+                    *argv,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    cwd=cwd,
+                )
             
             try:
                 stdout, stderr = await asyncio.wait_for(
@@ -122,6 +136,11 @@ class ExecTool(Tool):
                 return "Error: Command blocked by safety guard (not in allowlist)"
 
         if self.restrict_to_workspace:
+            # In restricted mode, disallow shell metacharacters to reduce injection
+            # and workspace-escape vectors through shell expansion.
+            if re.search(r"[;&|`]|\$\(|<|>", cmd):
+                return "Error: Command blocked by safety guard (shell operators not allowed in restricted mode)"
+
             if "..\\" in cmd or "../" in cmd:
                 return "Error: Command blocked by safety guard (path traversal detected)"
 
