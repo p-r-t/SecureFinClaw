@@ -47,32 +47,40 @@ earnings_calendar(command="revisions", symbol="TICK")
 
 ### 2b — Short Interest & Institutional Signal
 ```
-get_stock_info(symbol="TICK")
+yfinance(command="info", symbol="TICK")
 ```
-- `short_ratio > 5` or `short_percent_of_float > 10%`: Significant informed short pressure.
+- `shortRatio > 5` or `shortPercentOfFloat > 10%`: Significant informed short pressure.
   Ask: What do the shorts know that the bull case ignores?
-- `held_percent_institutions` declining quarter-over-quarter: Smart money is leaving.
+- `heldPercentInstitutions` declining quarter-over-quarter: Smart money is leaving.
 
-### 2c — SEC Filing Red Flags
-```
-sec_edgar_tool(ticker="TICK", form_type="10-K", section="Risk Factors")
-```
-Look specifically for:
-- **Regulatory threats**: Pending litigation, antitrust investigations, FDA issues.
-- **Customer concentration**: Does 1 customer = > 20% of revenue?
-- **Debt maturity walls**: Large debt tranches due within 3 years.
-- **Going concern language**: Any auditor qualifications.
-- **Related-party transactions**: Signs of self-dealing.
+### 2c — SEC Filing Red Flags (Risk Factors, Competition, Litigation)
 
-### 2d — Competitive Threat Check
-```
-sec_edgar_tool(ticker="TICK", section="Competition")
-```
-- Has the "painfully simple" moat been disrupted recently?
-- Are well-funded new entrants named as competitors that weren't there 2 years ago?
-- Is the company's pricing power declining (gross margins compressing over 3 years)?
+This requires a **two-step pipeline** — there is no single-call shortcut:
 
-### 2e — Bear Thesis Search
+**Step 1 — Find the latest 10-K filing URL:**
+```
+sec_edgar(command="ticker_filings", ticker="TICK")
+```
+From the result, pick the most recent `10-K` entry and copy its `filing_url`.
+
+**Step 2 — Fetch and parse with narrative text:**
+```
+sec_edgar(command="fetch_and_parse", filing_url="<URL from Step 1>", include_text=true)
+```
+
+When `include_text=true`, the response includes up to 4000 characters each of:
+- **Risk Factors** — read for: regulatory threats, customer concentration, debt maturity walls,
+  going concern language, and related-party transactions.
+- **MD&A** — read for: management’s own commentary on competitive dynamics, pricing pressure,
+  and margin trajectory.
+- **Market Risk** — read for: interest rate, FX, and commodity exposure.
+
+Scan these sections for **specific facts that contradict the bull case moat and management claims**.
+- Has a new well-funded competitor appeared that wasn’t named 2 years ago?
+- Is gross margin compressing over 3 years (pricing power eroding)?
+- Does 1 customer represent > 20% of revenue?
+
+### 2d — Bear Thesis Search
 Search for: `"[COMPANY NAME] short thesis"` or `"[TICKER] value trap"`
 - Look for short-seller research reports (Hindenburg, Citron, Spruce Point, etc.).
 - Note any specific financial engineering claims (non-GAAP adjustments, goodwill write-ups).

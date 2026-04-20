@@ -183,12 +183,13 @@ class AgentLoop:
 
         # Value Investing deterministic math and parsing tools
         from finclaw.agent.financial_tools import (
-            DCFTool, ClonerTool, ValuationSensitivityTool, FundamentalScorecardTool
+            DCFTool, ClonerTool, ValuationSensitivityTool, FundamentalScorecardTool, ScreenerTool
         )
         self.tools.register(DCFTool())
         self.tools.register(ClonerTool())
         self.tools.register(ValuationSensitivityTool())
         self.tools.register(FundamentalScorecardTool())
+        self.tools.register(ScreenerTool())
 
     
     async def _connect_mcp(self) -> None:

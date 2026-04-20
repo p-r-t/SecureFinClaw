@@ -14,6 +14,7 @@ from .dcf_tool import DCFTool
 from .cloner_tool import ClonerTool
 from .sensitivity_tool import ValuationSensitivityTool
 from .scorecard_tool import FundamentalScorecardTool
+from .screener_tool import ScreenerTool
 
 # Backward-compat alias
 MemeMonitorTool = MemeSearchTool
@@ -22,5 +23,5 @@ __all__ = [
     "YFinanceTool", "EconomicsDataTool", "AKShareTool", "SecEdgarTool",
     "EarningsCalendarTool", "MemeSearchTool", "MemeDataTool",
     "DCFTool", "ClonerTool",
-    "ValuationSensitivityTool", "FundamentalScorecardTool",
+    "ValuationSensitivityTool", "FundamentalScorecardTool", "ScreenerTool"
 ]

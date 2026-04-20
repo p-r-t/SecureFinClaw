@@ -51,7 +51,7 @@ with `compare_previous: true`.
 | Chuck Akre | Akre Capital Mgmt | `0001112520` |
 
 **Rules:**
-- Include only **equity positions** (`current_holdings`, not `options_positions` or `bond_positions`).
+- Include only **equity positions** (the `equity` array in the response — ignore `options` and `bonds`).
 - Flag positions appearing in **2+ filings** as **High Conviction**.
 - Flag positions that are **new** (not in previous filing) as **New Buy**.
 - Flag positions increased **> 20%** in share count as **Significant Add**.
@@ -65,42 +65,19 @@ with `compare_previous: true`.
 
 ---
 
-## Step 2 — Fundamental Pre-Screen
+## Step 2 — Fundamental Screening
 
-For each candidate from Step 1 (cap at 20 tickers to stay performant), call:
-```
-fundamental_scorecard(ticker="TICK", years=3)
-```
+If the user wants initial ideas from pre-screened universes instead of 13Fs, use the `stock_screener` tool. This tool returns up to 20 matched tickers per preset. 
 
-Use batch calls where possible. Check the `dhandho_flags` object for quick pass/fail:
-
-| Flag | Criterion | Required for pass |
-|------|-----------|-------------------|
-| `pe_lt_15` | P/E < 15x | ✅ Must pass |
-| `fcf_yield_gt_6pct` | FCF Yield > 6% | ✅ Must pass |
-| `roe_avg_gt_15pct` | 5yr avg ROE > 15% | ✅ Must pass |
-| `de_lt_0_5` | D/E < 0.5 | 🔶 Preferred, not disqualifying |
-
-**Pass threshold:** At least 3 of 4 flags. Discard anything with fewer than 2.
-
----
-
-## Step 3 — Sector-Based Scanning (if user requests or no 13F candidates pass)
-
-Use pre-defined curated universes. For each list, call `fundamental_scorecard` per ticker and
-apply the same 3/4 flag threshold.
-
-**Curated Universes (Dhandho-friendly sectors):**
+**Available Presets:**
+- `dhandho` (Default) — Screen for undervalued growth / high ROE
+- `deep_value` — Screen for extreme undervaluation
+- `large_cap_value` — Screen for large undervalued companies
 
 ```
-Consumer Staples:  KO, PG, CL, MKC, CHD, UL, NSRGY, KHC, GIS, SJM
-Energy (Majors):   CVX, XOM, COP, OXY, PSX, VLO, MPC, PBF, HES, EOG
-Financials:        BRK.B, JPM, BAC, WFC, TRV, ALL, CB, AIG, MET, PRU
-Healthcare:        JNJ, ABT, MDT, BDX, ANTM, HUM, CI, CVS, MCK, AHS
-Industrials:       MMM, ITW, GD, RTX, HII, LMT, NOC, EMR, PH, ROK
+stock_screener(preset="dhandho", limit=5)
 ```
-
-Only scan a sector if the user asks for it, or if 13F candidates are sparse.
+You can use `stock_screener` to enrich your watchlist if Step 1 (13F clones) yields fewer than 3 candidates. It operates in bulk so it will not cause rate limit issues.
 
 ---
 
@@ -108,7 +85,12 @@ Only scan a sector if the user asks for it, or if 13F candidates are sparse.
 
 If the user asks to "find quality companies near their lows":
 
-For each ticker in the relevant curated universe, call `get_stock_info` and compute:
+For each ticker in the relevant curated universe, call:
+```
+yfinance(command="info", symbol="TICK")
+```
+
+From the result, extract `fiftyTwoWeekLow` and `currentPrice` (or `regularMarketPrice`), then:
 ```
 proximity_to_low = (current_price - fifty_two_week_low) / fifty_two_week_low
 ```
@@ -142,8 +124,8 @@ Always end with: _"Run `value-investing` on [TICKER] for a full thesis and DCF v
 
 ## Notes
 
-- **Performance:** `fundamental_scorecard` is one API call per ticker. Cap the screened universe
-  at 20 tickers per run to stay responsive.
+- **Performance:** `fundamental_scorecard` is one API call per ticker and does NOT support
+  batching. Call sequentially and cap at 10 tickers per run to stay responsive.
 - **Data lag:** 13F filings have a 45-day disclosure delay — treat as directional, not real-time.
 - **Not a buy signal:** The watchlist is an idea source only. Always follow up with
   `value-investing` and `investment-critic` before making a decision.
