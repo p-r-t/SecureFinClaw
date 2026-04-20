@@ -213,6 +213,27 @@ PROVIDERS: tuple[ProviderSpec, ...] = (
         model_overrides=(),
     ),
 
+    # Vertex AI: needs "vertex_ai/" prefix for LiteLLM.
+    ProviderSpec(
+        name="vertex_ai",
+        keywords=("vertex", "vertex_ai"),
+        env_key="GOOGLE_APPLICATION_CREDENTIALS",
+        display_name="Vertex AI",
+        litellm_prefix="vertex_ai",         # gemini-1.5-pro → vertex_ai/gemini-1.5-pro
+        skip_prefixes=("vertex_ai/",),      # avoid double-prefix
+        env_extras=(
+            ("VERTEX_PROJECT", "{project_id}"),
+            ("VERTEX_LOCATION", "{location}"),
+        ),
+        is_gateway=False,
+        is_local=False,
+        detect_by_key_prefix="",
+        detect_by_base_keyword="",
+        default_api_base="",
+        strip_model_prefix=False,
+        model_overrides=(),
+    ),
+
     # Zhipu: LiteLLM uses "zai/" prefix.
     # Also mirrors key to ZHIPUAI_API_KEY (some LiteLLM paths check that).
     # skip_prefixes: don't add "zai/" when already routed via gateway.

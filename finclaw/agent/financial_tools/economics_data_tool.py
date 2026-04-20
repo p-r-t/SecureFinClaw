@@ -161,43 +161,60 @@ def _fetch_fred_series(
 
 
 def _compute_yoy_rate(observations: list[dict]) -> float | None:
-    """Compute YoY % change from FRED observations (desc order by date).
+    """Compute Year-over-Year % change from FRED observations (descending date order).
 
-    Finds the latest value and the value ~12 months prior, then returns
-    ((latest / prior) - 1) * 100.  Returns None if insufficient data.
+    Algorithm:
+    1. Take the latest observation as the current value.
+    2. Compute the exact prior-year date: same month and day, one calendar year back.
+    3. Find the closest observation to that anchor within a ±15-day tolerance
+       (accommodates monthly series released on the first or last business day).
+    4. Return ((latest / prior) - 1) * 100, or None if the prior cannot be located
+       within tolerance.
+
+    A 15-day tolerance is intentionally tighter than the previous 3-month gap to
+    ensure we never silently return a 9-month or 15-month rate masquerading as YoY.
     """
     if len(observations) < 2:
         return None
 
     # observations are in descending date order from FRED
     try:
+        from datetime import date as _date, timedelta
         latest_val = float(observations[0]["value"])
-        latest_date = observations[0]["date"]  # YYYY-MM-DD
+        latest_date_str = observations[0]["date"]  # YYYY-MM-DD
+        latest_date = _date.fromisoformat(latest_date_str)
     except (KeyError, ValueError, TypeError):
         return None
 
-    # Walk backwards to find the observation closest to 12 months prior
-    target_year = int(latest_date[:4]) - 1
-    target_month_day = latest_date[4:]  # e.g. "-02-01"
-    target_date = f"{target_year}{target_month_day}"
+    # Anchor: exactly 12 months before the latest date.
+    # Handle Feb-29 edge case by clamping to Feb-28 in non-leap years.
+    try:
+        prior_year = latest_date.year - 1
+        try:
+            target_prior = latest_date.replace(year=prior_year)
+        except ValueError:
+            # Feb 29 in a leap year -> use Feb 28
+            target_prior = latest_date.replace(year=prior_year, day=28)
+    except Exception:
+        return None
 
+    # Tolerance: ±15 days (half a monthly reporting lag)
+    _TOLERANCE_DAYS = 15
     best_obs = None
-    best_gap = 999
+    best_gap_days = _TOLERANCE_DAYS + 1  # must beat this to qualify
+
     for obs in observations[1:]:
         try:
-            obs_date = obs["date"]
-            # Compute approximate gap in months from the target date
-            gap = abs(
-                (int(obs_date[:4]) - target_year) * 12
-                + int(obs_date[5:7]) - int(latest_date[5:7])
-            )
-            if gap < best_gap:
-                best_gap = gap
+            obs_date = _date.fromisoformat(obs["date"])
+            gap = abs((obs_date - target_prior).days)
+            if gap <= _TOLERANCE_DAYS and gap < best_gap_days:
+                best_gap_days = gap
                 best_obs = obs
         except (KeyError, ValueError, TypeError):
             continue
 
-    if best_obs is None or best_gap > 3:
+    if best_obs is None:
+        # No observation within tolerance — refuse to return a misleading rate.
         return None
 
     try:

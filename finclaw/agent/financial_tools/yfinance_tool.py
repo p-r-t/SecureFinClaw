@@ -32,6 +32,7 @@ import yfinance as yf
 from loguru import logger
 
 from finclaw.agent.tools.base import Tool
+from finclaw.agent.financial_tools.utils import sanitize_json
 
 
 # ---------------------------------------------------------------------------
@@ -91,7 +92,23 @@ def _get_batch_quotes(symbols: list[str]) -> list:
 
                 hist = hist.dropna(how="all")
                 current_price = float(hist["Close"].iloc[-1])
-                previous_close = float(hist["Close"].iloc[-2]) if len(hist) >= 2 else current_price
+
+                # Prefer the authoritative regularMarketPreviousClose from ticker.info
+                # rather than the second-to-last row in the history DataFrame, which can
+                # be misaligned intraday (e.g., yesterday's intraday bar vs. official close).
+                previous_close: float | None = None
+                try:
+                    info = yf.Ticker(symbol).info
+                    previous_close = info.get("regularMarketPreviousClose") or info.get("previousClose")
+                    if previous_close is not None:
+                        previous_close = float(previous_close)
+                except Exception:
+                    previous_close = None
+
+                if previous_close is None:
+                    # Fallback: use prior row only if we have at least 2 valid rows
+                    previous_close = float(hist["Close"].iloc[-2]) if len(hist) >= 2 else current_price
+
                 change = current_price - previous_close
                 change_percent = (change / previous_close) * 100 if previous_close else 0
 
@@ -192,6 +209,15 @@ def _get_info(symbol: str) -> dict:
         book_value = info.get("bookValue")
         shares_outstanding = info.get("sharesOutstanding")
 
+        # Note: sharesOutstanding from yfinance can lag actual counts by weeks/months
+        # (e.g., during active buyback programs or secondary offerings). The derived
+        # book_value_total is therefore an approximate figure. Use with caution.
+        book_value_total = (
+            book_value * shares_outstanding
+            if book_value and shares_outstanding
+            else None
+        )
+
         return {
             "symbol": symbol,
             "company_name": info.get("longName", info.get("shortName", "N/A")),
@@ -247,11 +273,8 @@ def _get_info(symbol: str) -> dict:
             "peg_ratio": info.get("trailingPegRatio"),
             "total_assets": info.get("totalAssets"),
             "total_liabilities": info.get("totalLiab", info.get("totalLiabilities")),
-            "book_value_total": (
-                book_value * shares_outstanding
-                if book_value and shares_outstanding
-                else None
-            ),
+            # Approximate: derived from bookValue * sharesOutstanding; share count may lag.
+            "book_value_total": book_value_total,
             "timestamp": int(datetime.now().timestamp()),
         }
     except Exception as e:
@@ -710,4 +733,4 @@ class YFinanceTool(Tool):
         else:
             result = {"error": f"Unknown command: {command!r}"}
 
-        return json.dumps(result, ensure_ascii=False)
+        return json.dumps(sanitize_json(result), ensure_ascii=False)

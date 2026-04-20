@@ -87,10 +87,12 @@ class LiteLLMProvider(LLMProvider):
         default_model: str = "anthropic/claude-opus-4-5",
         extra_headers: dict[str, str] | None = None,
         provider_name: str | None = None,
+        provider_config: Any = None,
     ):
         super().__init__(api_key, api_base)
         self.default_model = default_model
         self.extra_headers = extra_headers or {}
+        self.provider_config = provider_config
         
         # Detect gateway / local deployment.
         # provider_name (from config key) is the primary signal;
@@ -128,10 +130,20 @@ class LiteLLMProvider(LLMProvider):
         # Resolve env_extras placeholders:
         #   {api_key}  → user's API key
         #   {api_base} → user's api_base, falling back to spec.default_api_base
+        #   {field}    → getattr(provider_config, field)
         effective_base = api_base or spec.default_api_base
         for env_name, env_val in spec.env_extras:
-            resolved = env_val.replace("{api_key}", api_key)
-            resolved = resolved.replace("{api_base}", effective_base)
+            resolved = env_val.replace("{api_key}", api_key or "")
+            resolved = resolved.replace("{api_base}", effective_base or "")
+            
+            # Resolve any other placeholders from provider_config
+            if self.provider_config:
+                import re
+                placeholders = re.findall(r"\{(\w+)\}", resolved)
+                for ph in placeholders:
+                    val = getattr(self.provider_config, ph, "")
+                    resolved = resolved.replace(f"{{{ph}}}", str(val))
+            
             os.environ.setdefault(env_name, resolved)
     
     def _resolve_model(self, model: str) -> str:

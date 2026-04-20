@@ -1,47 +1,63 @@
 ---
 name: cron
-description: Schedule reminders and recurring tasks.
+description: >
+  Schedule repeating reminders or autonomous recurring tasks (e.g. "check AAPL every hour",
+  "remind me to take a break every 20 minutes", "run a portfolio summary every morning at 8am").
+  Use this skill when the user asks to schedule, repeat, automate, remind, or set an alarm for
+  anything time-based. Supports one-time ("at") and recurring ("every") schedules.
 ---
 
 # Cron
 
-Use the `cron` tool to schedule reminders or recurring tasks.
+Use the `cron` tool to schedule reminders or recurring agent tasks.
 
-## Three Modes
+## Two Job Types
 
-1. **Reminder** - message is sent directly to user
-2. **Task** - message is a task description, agent executes and sends result
-3. **One-time** - runs once at a specific time, then auto-deletes
+| Type | Behaviour |
+|------|-----------|
+| `reminder` | Sends the `message` text directly to the user as-is. |
+| `task` | Treats `message` as a task — the agent re-runs it each time and sends the result. |
 
-## Examples
+Always default to `type="task"` when the user says "check X", "run X", or "do X" on a schedule.
+Use `type="reminder"` only when they want a simple text nudge (e.g. "remind me to drink water").
 
-Fixed reminder:
-```
-cron(action="add", message="Time to take a break!", every_seconds=1200)
-```
+## Schedule Parameters (pick one)
 
-Dynamic task (agent executes each time):
-```
-cron(action="add", message="Check AAPL stock price and report", every_seconds=600)
-```
+| Field | Example | When to use |
+|-------|---------|-------------|
+| `every_seconds` | `1200` | Repeating intervals |
+| `cron_expr` | `"0 8 * * *"` | Specific times, weekdays |
+| `at` | ISO datetime string | One-time, fires once then auto-deletes |
 
-One-time scheduled task (compute ISO datetime from current time):
-```
-cron(action="add", message="Remind me about the meeting", at="<ISO datetime>")
-```
+**Timezone:** `cron_expr` runs in the server's local timezone. If the user specifies a timezone,
+note it in the message text (e.g. "9am ET") — the cron expression should be adjusted accordingly.
+Use the current time shown in the system prompt to compute the correct offset.
 
-List/remove:
+## Common Expressions
+
+| User says | Parameters |
+|-----------|------------|
+| every 20 minutes | `every_seconds: 1200` |
+| every hour | `every_seconds: 3600` |
+| every day at 8am | `cron_expr: "0 8 * * *"` |
+| weekdays at 5pm | `cron_expr: "0 17 * * 1-5"` |
+| at a specific time | `at: <ISO datetime — compute from current time in system prompt>` |
+| every 15 min during market hours | `cron_expr: "*/15 9-16 * * 1-5"` |
+
+## Actions
+
 ```
+cron(action="add",    message="...", every_seconds=600, type="task")
+cron(action="add",    message="Drink water!", every_seconds=1200, type="reminder")
+cron(action="add",    message="...", cron_expr="0 9 * * 1-5", type="task")
+cron(action="add",    message="...", at="<ISO datetime>")   # one-time
 cron(action="list")
 cron(action="remove", job_id="abc123")
 ```
 
-## Time Expressions
+## After Scheduling
 
-| User says | Parameters |
-|-----------|------------|
-| every 20 minutes | every_seconds: 1200 |
-| every hour | every_seconds: 3600 |
-| every day at 8am | cron_expr: "0 8 * * *" |
-| weekdays at 5pm | cron_expr: "0 17 * * 1-5" |
-| at a specific time | at: ISO datetime string (compute from current time) |
+Always confirm back to the user:
+> "✅ Scheduled: I'll check AAPL's price every hour and let you know."
+
+Include the job ID from the response so they can remove it later.

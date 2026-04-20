@@ -570,7 +570,8 @@ class EquityValuationRouter(LLMRouterTool):
     )
 
     def _build_inner_tools(self) -> list[Tool]:
-        return [_EquityValuationDispatch()]
+        from finclaw.agent.financial_tools import DCFTool
+        return [_EquityValuationDispatch(), DCFTool()]
 
     async def execute(self, **kwargs: Any) -> str:
         query = kwargs.get("query", "")

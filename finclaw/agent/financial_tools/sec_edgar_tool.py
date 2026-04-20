@@ -20,6 +20,7 @@ from typing import Any, Optional
 from loguru import logger
 
 from finclaw.agent.tools.base import Tool
+from finclaw.agent.financial_tools.utils import sanitize_json
 
 USER_AGENT = os.environ.get("SEC_USER_AGENT", "FinClaw research@finclaw.ai")
 _SLEEP_SEC = 0.12
@@ -289,7 +290,7 @@ def _parse_ix_numeric(tag) -> float | None:
     raw = tag.get_text(" ", strip=True)
     if not raw:
         return None
-    raw = raw.replace("—", "").replace("–", "").strip()
+    raw = raw.replace("\u2014", "").replace("\u2013", "").strip()
     neg = raw.startswith("(") and raw.endswith(")")
     s = re.sub(r"[\$,]", "", raw.strip("()")).strip()
     if s in ("", "-", "NA", "N/A"):
@@ -309,7 +310,70 @@ def _parse_ix_numeric(tag) -> float | None:
     return v
 
 
-def _find_ix_value(soup, concepts: list[str], numeric: bool):
+# ---------------------------------------------------------------------------
+# contextRef-aware iXBRL tag resolution
+# ---------------------------------------------------------------------------
+
+def _resolve_primary_context(soup, period_end: str | None) -> set[str]:
+    """Identify the contextRef IDs that represent the filing's primary reporting period.
+
+    Strategy:
+    1. Parse all <xbrli:context> or <context> elements from the XBRL header.
+    2. Score them by how closely their end-date matches the filing's period_end date.
+    3. Return the set of contextRef IDs that match the primary period.
+
+    This prevents picking up prior-year or prior-quarter values that share the
+    same concept name but refer to a different reporting window.
+    """
+    if not period_end:
+        return set()
+
+    try:
+        period_end_clean = period_end.strip()
+        # Normalize to YYYY-MM-DD if the filing uses other date formats
+        # Some filings use YYYY-MM-DD, others MM/DD/YYYY
+        if "/" in period_end_clean:
+            parts = period_end_clean.split("/")
+            if len(parts) == 3:
+                period_end_clean = f"{parts[2]}-{parts[0].zfill(2)}-{parts[1].zfill(2)}"
+    except Exception:
+        return set()
+
+    matching: set[str] = set()
+    # Try both namespace-prefixed and plain tags
+    ctx_tags = soup.find_all(["xbrli:context", "context"])
+    for ctx in ctx_tags:
+        ctx_id = ctx.get("id", "")
+        if not ctx_id:
+            continue
+        # Match on <xbrli:endDate> or <endDate>
+        end_tag = ctx.find(["xbrli:endDate", "endDate"])
+        if end_tag:
+            end_val = (end_tag.get_text(strip=True) or "").strip()
+            if end_val == period_end_clean:
+                matching.add(ctx_id)
+        else:
+            # Instant context — check <xbrli:instant> or <instant>
+            instant_tag = ctx.find(["xbrli:instant", "instant"])
+            if instant_tag:
+                inst_val = (instant_tag.get_text(strip=True) or "").strip()
+                if inst_val == period_end_clean:
+                    matching.add(ctx_id)
+
+    return matching
+
+
+def _find_ix_value(soup, concepts: list[str], numeric: bool, primary_contexts: set[str] | None = None):
+    """Find the best iXBRL tag for the given concept list.
+
+    If primary_contexts is provided, candidates whose contextRef is in that set
+    are strongly preferred. Remaining candidates are ranked by:
+      1. Most-recent endDate (closest to filing period)
+      2. Largest absolute magnitude (usually the most comprehensive figure)
+
+    This prevents accidentally returning prior-year or wrong-duration values
+    that share the same concept name.
+    """
     for nm in concepts:
         tags = soup.find_all(
             lambda t, _nm=nm: (
@@ -318,11 +382,43 @@ def _find_ix_value(soup, concepts: list[str], numeric: bool):
                 and t.get("name") == _nm
             )
         )
+        if not tags:
+            continue
+
+        if not numeric:
+            # For text fields (ticker, company name, period) just return the first non-empty match
+            for tag in tags:
+                v = re.sub(r"\s+", " ", tag.get_text(" ", strip=True)).strip()
+                if v:
+                    return v
+            continue
+
+        # Collect all numeric candidates with their contextRef
+        candidates: list[tuple[float, str, Any]] = []  # (value, contextRef, tag)
         for tag in tags:
-            v = _parse_ix_numeric(tag) if numeric else re.sub(r"\s+", " ", tag.get_text(" ", strip=True)).strip()
-            if v is None or v == "":
+            v = _parse_ix_numeric(tag)
+            if v is None:
                 continue
-            return v
+            ctx_ref = tag.get("contextRef", "")
+            candidates.append((v, ctx_ref, tag))
+
+        if not candidates:
+            continue
+
+        # Priority 1: candidates whose contextRef is in the primary period set
+        if primary_contexts:
+            primary_hits = [(v, ctx, t) for v, ctx, t in candidates if ctx in primary_contexts]
+            if primary_hits:
+                # Among primary-period hits, prefer the largest absolute magnitude
+                # (catches YTD vs quarterly conflicts; annual is usually larger)
+                primary_hits.sort(key=lambda x: abs(x[0]), reverse=True)
+                return primary_hits[0][0]
+
+        # Priority 2: no primary-context match — pick the largest absolute value
+        # (heuristic: most comprehensive reporting period tends to be the biggest number)
+        candidates.sort(key=lambda x: abs(x[0]), reverse=True)
+        return candidates[0][0]
+
     return None
 
 
@@ -331,25 +427,36 @@ def _parse_html_key_facts(html: str) -> dict[str, Any]:
     is_ixbrl = html.lstrip().lower()[:50].startswith("<?xml") or "ix:" in html[:2000].lower()
     soup = BeautifulSoup(html, "lxml-xml" if is_ixbrl else "lxml")
 
+    # Step 1: extract non-numeric DEI fields (these are not context-sensitive)
+    ticker = _find_ix_value(soup, _TICKER_CONCEPTS, numeric=False)
+    company_name = _find_ix_value(soup, _COMPANY_CONCEPTS, numeric=False)
+    form_type = _find_ix_value(soup, _FORM_CONCEPTS, numeric=False)
+    period_end = _find_ix_value(soup, _PERIOD_CONCEPTS, numeric=False)
+
+    # Step 2: resolve the primary reporting contextRef IDs from the filing header
+    primary_contexts = _resolve_primary_context(soup, period_end) if is_ixbrl else None
+
+    # Step 3: extract all financial figures with contextRef-aware resolution
     return {
         "is_ixbrl": is_ixbrl,
-        "ticker": _find_ix_value(soup, _TICKER_CONCEPTS, numeric=False),
-        "company_name": _find_ix_value(soup, _COMPANY_CONCEPTS, numeric=False),
-        "form_type": _find_ix_value(soup, _FORM_CONCEPTS, numeric=False),
-        "period_end": _find_ix_value(soup, _PERIOD_CONCEPTS, numeric=False),
-        "shares_outstanding": _find_ix_value(soup, _SHARES_CONCEPTS, numeric=True),
-        "revenue": _find_ix_value(soup, _REVENUE_CONCEPTS, numeric=True),
-        "gross_profit": _find_ix_value(soup, _GROSS_PROFIT_CONCEPTS, numeric=True),
-        "operating_income": _find_ix_value(soup, _OPERATING_INCOME_CONCEPTS, numeric=True),
-        "net_income": _find_ix_value(soup, _NETINCOME_CONCEPTS, numeric=True),
-        "eps_basic": _find_ix_value(soup, _EPS_BASIC_CONCEPTS, numeric=True),
-        "eps_diluted": _find_ix_value(soup, _EPS_DILUTED_CONCEPTS, numeric=True),
-        "cash_and_equivalents": _find_ix_value(soup, _CASH_CONCEPTS, numeric=True),
-        "total_assets": _find_ix_value(soup, _ASSETS_CONCEPTS, numeric=True),
-        "total_liabilities": _find_ix_value(soup, _LIAB_CONCEPTS, numeric=True),
-        "equity": _find_ix_value(soup, _EQUITY_CONCEPTS, numeric=True),
-        "operating_cash_flow": _find_ix_value(soup, _OCF_CONCEPTS, numeric=True),
-        "capex": _find_ix_value(soup, _CAPEX_CONCEPTS, numeric=True),
+        "ticker": ticker,
+        "company_name": company_name,
+        "form_type": form_type,
+        "period_end": period_end,
+        "primary_context_ids": sorted(primary_contexts) if primary_contexts else [],
+        "shares_outstanding": _find_ix_value(soup, _SHARES_CONCEPTS, numeric=True, primary_contexts=primary_contexts),
+        "revenue": _find_ix_value(soup, _REVENUE_CONCEPTS, numeric=True, primary_contexts=primary_contexts),
+        "gross_profit": _find_ix_value(soup, _GROSS_PROFIT_CONCEPTS, numeric=True, primary_contexts=primary_contexts),
+        "operating_income": _find_ix_value(soup, _OPERATING_INCOME_CONCEPTS, numeric=True, primary_contexts=primary_contexts),
+        "net_income": _find_ix_value(soup, _NETINCOME_CONCEPTS, numeric=True, primary_contexts=primary_contexts),
+        "eps_basic": _find_ix_value(soup, _EPS_BASIC_CONCEPTS, numeric=True, primary_contexts=primary_contexts),
+        "eps_diluted": _find_ix_value(soup, _EPS_DILUTED_CONCEPTS, numeric=True, primary_contexts=primary_contexts),
+        "cash_and_equivalents": _find_ix_value(soup, _CASH_CONCEPTS, numeric=True, primary_contexts=primary_contexts),
+        "total_assets": _find_ix_value(soup, _ASSETS_CONCEPTS, numeric=True, primary_contexts=primary_contexts),
+        "total_liabilities": _find_ix_value(soup, _LIAB_CONCEPTS, numeric=True, primary_contexts=primary_contexts),
+        "equity": _find_ix_value(soup, _EQUITY_CONCEPTS, numeric=True, primary_contexts=primary_contexts),
+        "operating_cash_flow": _find_ix_value(soup, _OCF_CONCEPTS, numeric=True, primary_contexts=primary_contexts),
+        "capex": _find_ix_value(soup, _CAPEX_CONCEPTS, numeric=True, primary_contexts=primary_contexts),
     }
 
 
@@ -518,10 +625,10 @@ class SecEdgarTool(Tool):
             elif command == "daily_parsed":
                 return await self._daily_parsed(kwargs)
             else:
-                return json.dumps({"error": f"Unknown command: {command!r}"})
+                return json.dumps(sanitize_json({"error": f"Unknown command: {command!r}"}))
         except Exception as exc:
             logger.warning(f"sec_edgar command={command} error: {exc}")
-            return json.dumps({"error": str(exc)})
+            return json.dumps(sanitize_json({"error": str(exc)}))
 
     # ------------------------------------------------------------------
 
@@ -543,17 +650,17 @@ class SecEdgarTool(Tool):
                 for h in hits
             ],
         }
-        return json.dumps(result, ensure_ascii=False)
+        return json.dumps(sanitize_json(result), ensure_ascii=False)
 
     async def _fetch_and_parse(self, kwargs: dict) -> str:
         filing_url = kwargs.get("filing_url", "")
         include_text = kwargs.get("include_text", False)
         if not filing_url:
-            return json.dumps({"error": "filing_url is required for fetch_and_parse"})
+            return json.dumps(sanitize_json({"error": "filing_url is required for fetch_and_parse"}))
         logger.info(f"sec_edgar fetch_and_parse url={filing_url[:80]} include_text={include_text}")
         html = _download_filing_html(filing_url)
         if not html:
-            return json.dumps({"error": "Failed to download filing HTML", "filing_url": filing_url})
+            return json.dumps(sanitize_json({"error": "Failed to download filing HTML", "filing_url": filing_url}))
         facts = _parse_html_key_facts(html)
         facts["filing_url"] = filing_url
         if include_text:
@@ -564,23 +671,23 @@ class SecEdgarTool(Tool):
             else:
                 facts["text_sections"] = {}
                 logger.info("sec_edgar no text sections found")
-        return json.dumps(facts, ensure_ascii=False, default=str)
+        return json.dumps(sanitize_json(facts), ensure_ascii=False, default=str)
 
     async def _ticker_filings(self, kwargs: dict) -> str:
         ticker = (kwargs.get("ticker") or "").upper()
         if not ticker:
-            return json.dumps({"error": "ticker is required for ticker_filings"})
+            return json.dumps(sanitize_json({"error": "ticker is required for ticker_filings"}))
         logger.info(f"sec_edgar ticker_filings ticker={ticker}")
 
         cik = _ticker_to_cik(ticker)
         if not cik:
-            return json.dumps({"error": f"CIK not found for ticker {ticker!r}"})
+            return json.dumps(sanitize_json({"error": f"CIK not found for ticker {ticker!r}"}))
 
         url = f"https://data.sec.gov/submissions/CIK{cik}.json"
         try:
             data = _sec_get(url).json()
         except Exception as e:
-            return json.dumps({"error": f"EDGAR submissions fetch failed: {e}"})
+            return json.dumps(sanitize_json({"error": f"EDGAR submissions fetch failed: {e}"}))
 
         recent = data.get("filings", {}).get("recent", {})
         forms = recent.get("form", [])
@@ -620,7 +727,7 @@ class SecEdgarTool(Tool):
         if not hits:
             is_weekend = date_.weekday() >= 5
             note = "weekend — SEC daily index typically empty" if is_weekend else "no 10-Q/10-K filings found"
-            return json.dumps({"date": str(date_), "note": note, "items": []}, ensure_ascii=False)
+            return json.dumps(sanitize_json({"date": str(date_), "note": note, "items": []}), ensure_ascii=False)
 
         # 2. map CIK → ticker
         cik_to_ticker: dict[str, str] = {}
@@ -645,11 +752,11 @@ class SecEdgarTool(Tool):
         selected_hits = [h for h in hits if cik_to_ticker.get(h.cik) in selected]
 
         if not selected_hits:
-            return json.dumps({
+            return json.dumps(sanitize_json({
                 "date": str(date_),
                 "note": "no filings matched the selected tickers",
                 "items": [],
-            }, ensure_ascii=False)
+            }), ensure_ascii=False)
 
         # 4. download + parse
         items = []
@@ -667,11 +774,11 @@ class SecEdgarTool(Tool):
                 **facts,
             })
 
-        return json.dumps({
+        return json.dumps(sanitize_json({
             "date": str(date_),
             "total_selected": len(selected_hits),
             "items": items,
-        }, ensure_ascii=False, default=str)
+        }), ensure_ascii=False, default=str)
 
 
 def _resolve_date(date_str: str | None) -> dt.date:

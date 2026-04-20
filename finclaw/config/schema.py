@@ -187,6 +187,16 @@ class ProviderConfig(BaseModel):
     extra_headers: dict[str, str] | None = None  # Custom headers (e.g. APP-Code for AiHubMix)
 
 
+class VertexAIConfig(BaseModel):
+    """Vertex AI provider configuration."""
+    project_id: str = ""
+    location: str = "us-central1"
+    credentials_path: str = ""
+    api_key: str = ""
+    api_base: str | None = None
+    extra_headers: dict[str, str] | None = None
+
+
 class ProvidersConfig(BaseModel):
     """Configuration for LLM providers."""
     custom: ProviderConfig = Field(default_factory=ProviderConfig)  # Any OpenAI-compatible endpoint
@@ -203,6 +213,7 @@ class ProvidersConfig(BaseModel):
     minimax: ProviderConfig = Field(default_factory=ProviderConfig)
     aihubmix: ProviderConfig = Field(default_factory=ProviderConfig)  # AiHubMix API gateway
     openai_codex: ProviderConfig = Field(default_factory=ProviderConfig)  # OpenAI Codex (OAuth)
+    vertex_ai: VertexAIConfig = Field(default_factory=VertexAIConfig)  # Google Cloud Vertex AI
 
 
 class GatewayConfig(BaseModel):
@@ -289,7 +300,14 @@ class Config(BaseSettings):
         for spec in PROVIDERS:
             p = getattr(self.providers, spec.name, None)
             if p and any(kw in model_lower for kw in spec.keywords):
-                if spec.is_oauth or p.api_key:
+                if spec.is_oauth:
+                    return p, spec.name
+                if getattr(p, "api_key", ""):
+                    return p, spec.name
+                if getattr(p, "credentials_path", ""):
+                    return p, spec.name
+                if getattr(p, "project_id", ""):
+                    # Vertex AI can run on ADC without explicit key/path
                     return p, spec.name
 
         # Fallback: gateways first, then others (follows registry order)
@@ -315,7 +333,11 @@ class Config(BaseSettings):
     def get_api_key(self, model: str | None = None) -> str | None:
         """Get API key for the given model. Falls back to first available key."""
         p = self.get_provider(model)
-        return p.api_key if p else None
+        if not p:
+            return None
+        if getattr(p, "credentials_path", ""):
+            return p.credentials_path
+        return getattr(p, "api_key", None)
     
     def get_api_base(self, model: str | None = None) -> str | None:
         """Get API base URL for the given model. Applies default URLs for known gateways."""

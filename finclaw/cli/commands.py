@@ -417,11 +417,12 @@ def _make_provider(config: Config):
         raise typer.Exit(1)
 
     return LiteLLMProvider(
-        api_key=p.api_key if p else None,
+        api_key=config.get_api_key(model),
         api_base=config.get_api_base(model),
         default_model=model,
         extra_headers=p.extra_headers if p else None,
         provider_name=provider_name,
+        provider_config=p,
     )
 
 
@@ -450,11 +451,12 @@ def _make_inner_provider(config: Config):
         return None
 
     return LiteLLMProvider(
-        api_key=p.api_key,
+        api_key=config.get_api_key(inner_model),
         api_base=config.get_api_base(inner_model),
         default_model=inner_model,
         extra_headers=p.extra_headers if p else None,
         provider_name=inner_provider_name,
+        provider_config=p,
     )
 
 

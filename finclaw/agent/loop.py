@@ -181,6 +181,15 @@ class AgentLoop:
         # Financial news (Bloomberg, MarketWatch, Google News)
         self.tools.register(FinancialNewsTool())
 
+        # Value Investing deterministic math and parsing tools
+        from finclaw.agent.financial_tools import (
+            DCFTool, ClonerTool, ValuationSensitivityTool, FundamentalScorecardTool
+        )
+        self.tools.register(DCFTool())
+        self.tools.register(ClonerTool())
+        self.tools.register(ValuationSensitivityTool())
+        self.tools.register(FundamentalScorecardTool())
+
     
     async def _connect_mcp(self) -> None:
         """Connect to configured MCP servers (one-time, lazy)."""
