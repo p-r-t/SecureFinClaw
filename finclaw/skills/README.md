@@ -21,6 +21,7 @@ Since FinClaw uses a plugin-style grouping, skills are stored in subdirectories 
 | `market-regime` | 🌍 | Classify macro regime (Bull/Bear) using SPY & sector breadth. Instructs MoS to use. |
 | `qualitative-valuation` | 🏰 | Assess business moats, Five Forces, and management quality |
 | `stock-screener` | 🔍 | Screen a universe of stocks for value investing ideas; generate a watchlist |
+| `technical-timing` | ⏱️ | RSI, MACD, and moving average analysis to time entry on a fundamentally sound stock |
 | `value-investing` | 💰 | Pabrai "Dhandho" deep analysis and DCF valuation for a specific ticker |
 
 
@@ -50,13 +51,14 @@ Since FinClaw uses a plugin-style grouping, skills are stored in subdirectories 
 The value investing skills form a deliberate pipeline:
 
 ```
- market-regime → stock-screener → value-investing → investment-critic → bet-sizing
-"Set Context"     "Find ideas"    "Build the case"   "Tear it apart"    "Size the bet"
+ market-regime → stock-screener → value-investing → investment-critic → technical-timing → bet-sizing
+"Set Context"     "Find ideas"    "Build the case"   "Tear it apart"    "Time the entry"   "Size the bet"
 ```
 
 Supporting skills feed into the pipeline at specific stages:
+- **`market-regime`** → Sets the macro context and required Margin of Safety for all downstream analysis
 - **`qualitative-valuation`** → Stage 2 of `value-investing` (moat assessment framework)
-- **`historical-risk`** → `investment-critic` (quantitative risk data)
+- **`historical-risk`** → `investment-critic` + `technical-timing` (quantitative risk and volatility data)
 - **`earnings`** → `stock-screener` + `value-investing` (forward estimates, revision trends)
 
 Use all of them in sequence for a rigorous investment review. Use `value-investing` alone for a

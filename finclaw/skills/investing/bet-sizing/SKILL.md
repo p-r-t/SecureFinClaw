@@ -131,6 +131,7 @@ For full formulas, worked examples, and detailed methodology, read:
 ## Cross-References
 - **value-investing**: valuation-based edge estimates feed into conviction weighting
 - **investment-critic**: downstream validation before sizing
+- **technical-timing**: upstream — confirms entry timing signal before capital is allocated
 - **historical-risk**: realized volatility as a key input to Kelly sizing
 - [Not yet implemented] **forward-risk**: expected return forecasts as inputs to Kelly criterion
 - [Not yet implemented] **portfolio-construction**: tension between concentration and diversification

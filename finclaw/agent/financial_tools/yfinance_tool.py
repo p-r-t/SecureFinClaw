@@ -640,18 +640,26 @@ class YFinanceTool(Tool):
         symbol = kwargs.get("symbol") or kwargs.get("symbols") or kwargs.get("query", "")
         logger.info(f"yfinance:{command}  target={symbol!r}")
 
+        async def _run(func, *args):
+            try:
+                return await asyncio.wait_for(asyncio.to_thread(func, *args), timeout=30.0)
+            except asyncio.TimeoutError:
+                logger.error(f"yfinance timeout on command={command} symbol={symbol}")
+                return {"error": "yfinance API calculation timed out (30s limit)"}
+
+
         if command == "quote":
             symbol = kwargs.get("symbol", "")
             if not symbol:
                 return json.dumps({"error": "symbol is required for quote"})
-            result = await asyncio.to_thread(_get_quote, symbol)
+            result = await _run(_get_quote, symbol)
 
         elif command == "batch_quotes":
             symbols_str = kwargs.get("symbols", "")
             if not symbols_str:
                 return json.dumps({"error": "symbols is required for batch_quotes"})
             symbols = [s.strip() for s in symbols_str.split(",") if s.strip()]
-            result = await asyncio.to_thread(_get_batch_quotes, symbols)
+            result = await _run(_get_batch_quotes, symbols)
 
         elif command == "historical":
             symbol = kwargs.get("symbol", "")
@@ -660,45 +668,45 @@ class YFinanceTool(Tool):
             if not (symbol and start_date and end_date):
                 return json.dumps({"error": "symbol, start_date, end_date are required for historical"})
             interval = kwargs.get("interval", "1d")
-            result = await asyncio.to_thread(_get_historical, symbol, start_date, end_date, interval)
+            result = await _run(_get_historical, symbol, start_date, end_date, interval)
 
         elif command == "historical_price":
             symbol = kwargs.get("symbol", "")
             target_date = kwargs.get("target_date", "")
             if not (symbol and target_date):
                 return json.dumps({"error": "symbol and target_date are required for historical_price"})
-            result = await asyncio.to_thread(_get_historical_price, symbol, target_date)
+            result = await _run(_get_historical_price, symbol, target_date)
 
         elif command == "info":
             symbol = kwargs.get("symbol", "")
             if not symbol:
                 return json.dumps({"error": "symbol is required for info"})
-            result = await asyncio.to_thread(_get_info, symbol)
+            result = await _run(_get_info, symbol)
 
         elif command == "financials":
             symbol = kwargs.get("symbol", "")
             if not symbol:
                 return json.dumps({"error": "symbol is required for financials"})
-            result = await asyncio.to_thread(_get_financials, symbol)
+            result = await _run(_get_financials, symbol)
 
         elif command == "company_profile":
             symbol = kwargs.get("symbol", "")
             if not symbol:
                 return json.dumps({"error": "symbol is required for company_profile"})
-            result = await asyncio.to_thread(_get_company_profile, symbol)
+            result = await _run(_get_company_profile, symbol)
 
         elif command == "financial_ratios":
             symbol = kwargs.get("symbol", "")
             if not symbol:
                 return json.dumps({"error": "symbol is required for financial_ratios"})
-            result = await asyncio.to_thread(_get_financial_ratios, symbol)
+            result = await _run(_get_financial_ratios, symbol)
 
         elif command == "multiple_profiles":
             symbols_str = kwargs.get("symbols", "")
             if not symbols_str:
                 return json.dumps({"error": "symbols is required for multiple_profiles"})
             symbols = [s.strip() for s in symbols_str.split(",") if s.strip()]
-            result = await asyncio.to_thread(
+            result = await _run(
                 lambda: [p for s in symbols if "error" not in (p := _get_company_profile(s))]
             )
 
@@ -707,7 +715,7 @@ class YFinanceTool(Tool):
             if not symbols_str:
                 return json.dumps({"error": "symbols is required for multiple_ratios"})
             symbols = [s.strip() for s in symbols_str.split(",") if s.strip()]
-            result = await asyncio.to_thread(
+            result = await _run(
                 lambda: [r for s in symbols if "error" not in (r := _get_financial_ratios(s))]
             )
 
@@ -716,19 +724,19 @@ class YFinanceTool(Tool):
             if not query:
                 return json.dumps({"error": "query is required for search"})
             limit = kwargs.get("limit", 20)
-            result = await asyncio.to_thread(_search_symbols, query, limit)
+            result = await _run(_search_symbols, query, limit)
 
         elif command == "resolve_symbol":
             symbol = kwargs.get("symbol", "")
             if not symbol:
                 return json.dumps({"error": "symbol is required for resolve_symbol"})
-            result = await asyncio.to_thread(_resolve_symbol, symbol)
+            result = await _run(_resolve_symbol, symbol)
 
         elif command == "analyst_estimates":
             symbol = kwargs.get("symbol", "")
             if not symbol:
                 return json.dumps({"error": "symbol is required for analyst_estimates"})
-            result = await asyncio.to_thread(_get_analyst_estimates, symbol)
+            result = await _run(_get_analyst_estimates, symbol)
 
         else:
             result = {"error": f"Unknown command: {command!r}"}
