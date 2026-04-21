@@ -130,7 +130,10 @@ calculate_dcf(
 
 If `fcf_cagr_pct` is null or negative, use a conservative default of `0.05`.
 
-### Step 3b — Run Sensitivity Matrix
+### Step 3b — Market Regime Adjustment
+Before calculating the final Margin of Safety, check if the `market-regime` skill has been run in this session. If a regime card exists in context, apply the regime's recommended Margin of Safety adjustment (e.g., if regime is "Caution (Late Cycle)" and it recommends 65%, use 65% instead of 50%). If no regime context exists, proceed with the default 50% threshold.
+
+### Step 3c — Run Sensitivity Matrix
 ```
 valuation_sensitivity(fcf=<fcf_ttm_m>, shares=<shares_outstanding_m>)
 ```
@@ -147,44 +150,75 @@ valuation_sensitivity(fcf=<fcf_ttm_m>, shares=<shares_outstanding_m>)
 
 **Base Case Intrinsic Value:** $X.XX
 **Current Price:** $X.XX
-**Margin of Safety:** X%
+**Margin of Safety:** X% (Threshold: Y% [Adjusted for Market Regime if applicable])
 [Report result.margin_of_safety.verdict]
 ```
 
 ---
 
-## Final Report Structure
+## Investment Memo Template
 
 ```
-# Dhandho Value Analysis: [COMPANY] ([TICKER])
+# Investment Memo: [COMPANY] ([TICKER])
 *Analysis Date: [DATE]*
 
-## Stage 1: Fundamental Screen        [output]
-## Stage 2: Qualitative Checklist     [output]
-## Stage 3: Intrinsic Value           [output]
+## Executive Summary
+[2-3 sentences: The core investment thesis, stating the conviction level (High/Medium/Low), the quantitative mispricing, and the key qualitative driver.]
+
+## Stage 1: Fundamental Screen
+[Insert output from Stage 1]
+
+## Stage 2: Qualitative Checklist
+[Insert output from Stage 2]
+
+## Stage 3: Intrinsic Value & Scenario Analysis
+[Insert output from Stage 3, along with a Bull/Base/Bear scenario breakdown based on the sensitivity matrix]
 
 ---
-## Overall Verdict
-**Quantitative:** Pass / Fail
-**Qualitative:** Strong / Borderline / Weak
-**Valuation:** X% margin of safety (threshold: 50%)
 
-### Investment Thesis (if applicable)
-[2–3 sentences: bull case and the single biggest risk]
+## Risk Matrix
+| Risk | Probability (H/M/L) | Impact (H/M/L) | Mitigant |
+|---|---|---|---|
+| [Risk 1] | | | |
+| [Risk 2] | | | |
 
-### Action
-- ✅ Warrants further research — consider passing to `investment-critic` for red-teaming
-- ❌ Does not meet Dhandho criteria — pass for now
+## Peer Comparison
+| Metric | [TICKER] | [Peer 1] | [Peer 2] |
+|---|---|---|---|
+| P/E | | | |
+| ROE | | | |
+| FCF Yield | | | |
+
+## Overall Verdict & Action
+**Verdict:** [Quantitative Pass/Fail] | [Qualitative Assessment] | [Margin of Safety Achieved: Yes/No]
+**Action:** 
+- [ ] Warrants further research / allocate capital (Pass to `investment-critic`)
+- [ ] Watchlist (Price too high, monitor for entry at $X)
+- [ ] Pass (Fails Dhandho criteria)
 ```
 
 ---
 
-## Conservative Defaults
+## Common Pitfalls
 
-| Parameter | Default | Max allowed |
-|-----------|---------|-------------|
-| Growth Yr 1–5 | 5% | 12% |
-| Growth Yr 6–10 | Growth1 / 2 | — |
-| Discount rate | 10% | — |
-| Terminal multiple | 12x | 15x |
-| Margin of safety threshold | 50% | — |
+- **Negative or zero FCF**: Do NOT run DCF on negative FCF. Report "FCF negative — DCF not applicable" and rely on P/B or asset-based valuation instead.
+- **Cyclical earnings at peak**: A low P/E on peak cyclical earnings is a classic value trap. Check if the industry is cyclical (energy, commodities, autos) and compare current margins to 10-year averages.
+- **Terminal value dominance**: If PV of terminal value exceeds 80% of total intrinsic value, the DCF is unreliable — flag this explicitly. The conclusion is driven by assumptions about the distant future, not observable cash flows.
+- **Growth rate > 12%**: Cap Stage 1 growth at 12% regardless of historical CAGR. Very few businesses sustain >12% FCF growth for 5 years.
+- **Confusing GAAP vs non-GAAP EPS**: Always use FCF (operating cash flow minus capex) for DCF, not adjusted EPS. Non-GAAP adjustments routinely add back real costs (SBC, restructuring).
+- **Ignoring dilution**: Stock-based compensation dilutes shares outstanding. Use diluted shares, not basic, for per-share intrinsic value.
+- **Garbage-in-garbage-out**: A DCF is only as good as its assumptions. False precision (e.g., "$142.37 intrinsic value") gives false confidence. Always present a range via sensitivity analysis.
+
+## Reference Material
+
+For full formulas, worked examples, and detailed methodology, read:
+`references/detail.md` (in this skill's directory)
+
+
+## Cross-References
+- **stock-screener**: Upstream — generates the ticker candidates this skill analyzes
+- **investment-critic**: Downstream — red-teams the thesis produced here
+- **bet-sizing**: Downstream — sizes the position after the critic approves
+- **qualitative-valuation**: Stage 2 deep-dive — provides moat scoring framework
+- **historical-risk**: Risk context — adds quantitative risk data for the critic
+- **earnings**: Forward estimates — consensus and revision data for value trap detection

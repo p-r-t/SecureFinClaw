@@ -166,3 +166,18 @@ key assumption X is fragile / Bull case fails — this is likely a value trap]
   explicitly — this is itself signal (the thesis may be robust).
 - **The goal is not to talk the user out of investing.** It is to ensure they understand the
   specific ways this can go wrong before committing capital.
+
+## Common Pitfalls
+
+- **Generic bear cases**: "Competition is a risk" is useless. Always cite a specific competitor, product, or regulatory action.
+- **Anchoring to the bull thesis**: You are a critic. Fight the urge to balance. Your job is to find disconfirming evidence.
+- **Ignoring the base rate**: Most value stocks underperform for a reason. The default hypothesis should be "the market is right" — the bull case must overcome this.
+- **Fabricating short-seller reports**: If you cannot find a published short thesis, say "No public short thesis found" — this is itself signal. Do NOT invent one.
+- **Over-relying on short interest**: High short interest alone is not disconfirming evidence. Shorts can be wrong. Look for the *reason* behind the short.
+- **Confusing cyclical weakness with structural decline**: A "melting ice cube" has secular revenue decline. A cyclical trough is temporary. Check the 10-year revenue trend, not just 2-3 years.
+
+## Cross-References
+- **value-investing**: Upstream — produces the thesis this skill critiques
+- **historical-risk**: Risk data — provides quantitative drawdown/volatility context
+- **bet-sizing**: Downstream — if the thesis survives, size the position
+- **earnings**: Revision data — falling estimates as value trap signal

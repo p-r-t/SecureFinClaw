@@ -122,6 +122,18 @@ Always end with: _"Run `value-investing` on [TICKER] for a full thesis and DCF v
 
 ---
 
+## Common Pitfalls
+
+- **13F filing lag**: Filings have a 45-day disclosure delay. Superinvestors may have already sold. Treat as directional signal, not real-time.
+- **Survivorship bias in screeners**: Screeners exclude delisted companies, making historical backtests look better than reality.
+- **Low P/E ≠ cheap**: A stock with P/E of 5x and declining revenue is not cheap — it's pricing in earnings collapse. Always cross-check with FCF yield and forward estimates.
+- **Small sample bias in 13F cloning**: A position appearing in only 1 filing could be a hedge, not a conviction bet. Require 2+ managers for "High Conviction" labeling.
+- **Sector concentration**: If the screener returns 5 energy stocks, you don't have diversification — you have a sector bet. Flag sector concentration explicitly.
+
+## Cross-References
+- **value-investing**: Downstream — deep analysis on screened candidates
+- **earnings**: Enrichment — upcoming earnings dates for watchlist tickers
+
 ## Notes
 
 - **Performance:** `fundamental_scorecard` is one API call per ticker and does NOT support

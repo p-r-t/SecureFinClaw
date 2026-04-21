@@ -37,19 +37,16 @@ class SkillsLoader:
         
         # Workspace skills (highest priority)
         if self.workspace_skills.exists():
-            for skill_dir in self.workspace_skills.iterdir():
-                if skill_dir.is_dir():
-                    skill_file = skill_dir / "SKILL.md"
-                    if skill_file.exists():
-                        skills.append({"name": skill_dir.name, "path": str(skill_file), "source": "workspace"})
+            for skill_file in self.workspace_skills.rglob("SKILL.md"):
+                skill_dir = skill_file.parent
+                skills.append({"name": skill_dir.name, "path": str(skill_file), "source": "workspace"})
         
         # Built-in skills
         if self.builtin_skills and self.builtin_skills.exists():
-            for skill_dir in self.builtin_skills.iterdir():
-                if skill_dir.is_dir():
-                    skill_file = skill_dir / "SKILL.md"
-                    if skill_file.exists() and not any(s["name"] == skill_dir.name for s in skills):
-                        skills.append({"name": skill_dir.name, "path": str(skill_file), "source": "builtin"})
+            for skill_file in self.builtin_skills.rglob("SKILL.md"):
+                skill_dir = skill_file.parent
+                if not any(s["name"] == skill_dir.name for s in skills):
+                    skills.append({"name": skill_dir.name, "path": str(skill_file), "source": "builtin"})
         
         # Filter by requirements
         if filter_unavailable:
@@ -66,16 +63,13 @@ class SkillsLoader:
         Returns:
             Skill content or None if not found.
         """
-        # Check workspace first
-        workspace_skill = self.workspace_skills / name / "SKILL.md"
-        if workspace_skill.exists():
-            return workspace_skill.read_text(encoding="utf-8")
-        
-        # Check built-in
-        if self.builtin_skills:
-            builtin_skill = self.builtin_skills / name / "SKILL.md"
-            if builtin_skill.exists():
-                return builtin_skill.read_text(encoding="utf-8")
+        # Find skill path using list_skills (to support nested directories)
+        all_skills = self.list_skills(filter_unavailable=False)
+        for s in all_skills:
+            if s["name"] == name:
+                skill_file = Path(s["path"])
+                if skill_file.exists():
+                    return skill_file.read_text(encoding="utf-8")
         
         return None
     
