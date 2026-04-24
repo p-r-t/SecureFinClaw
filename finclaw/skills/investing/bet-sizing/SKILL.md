@@ -136,5 +136,53 @@ For full formulas, worked examples, and detailed methodology, read:
 - [Not yet implemented] **forward-risk**: expected return forecasts as inputs to Kelly criterion
 - [Not yet implemented] **portfolio-construction**: tension between concentration and diversification
 
+---
+
+## Funnel Kelly Presets
+
+Pre-configured Kelly assumptions for each funnel in the FinClaw funnel library.
+Use these when the user runs a specific funnel prompt and asks for position sizing.
+
+| Funnel | Win Prob | Payoff Ratio | Max Cap | Portfolio | Risk Rule | Notes |
+|--------|----------|-------------|---------|-----------|-----------|-------|
+| **Deep Value (Net-Net)** | 55% | 1.5:1 | 15% | $100K | Kelly | Illiquidity premium; hard cap for net-nets |
+| **Quality Compounder** | 65% | 3:1 | 25% | $100K | Kelly | High conviction; long hold period |
+| **Dividend & Income** | — | — | — | $100K | 2% risk rule | Stop below multi-year support; no Kelly |
+| **Turnaround** | 50% | 3:1 | — | $100K | 0.75% risk rule | Binary outcome; fixed risk rule preferred |
+| **Cyclical (Peak Pessimism)** | 55% | 2.5:1 | 20% | $100K | Kelly | Medium-high risk; hard cap |
+| **Spin-Off & Special Situation** | 60% | 2:1 | — | $100K | Kelly | Medium risk; no hard cap specified |
+| **Hidden Champion (Small-Cap)** | 65% | 3:1 | 15% | $100K | Kelly | Smaller float = illiquidity cap |
+| **Asset-Heavy / Sum-of-Parts** | 60% | 2:1 | — | $100K | Kelly | Catalyst-dependent |
+| **Insider Conviction** | 62% | 2:1 | — | $100K | Kelly | Insider edge premium |
+| **GARP** | 60% | 2.5:1 | 20% | $100K | Kelly | Growth-quality balance |
+| **ETF Momentum** | — | — | — | $100K | 1.5% risk rule | Stop = support; no Kelly |
+| **Sector Rotation** | — | — | — | $100K | 1% risk rule | Stop below recent higher low |
+| **Breakout Earnings** | — | — | — | $100K | 0.75% risk rule | Binary event; reduced size |
+| **Small-Cap Catalyst** | — | — | — | $100K | 0.75% risk rule | High vol; fixed risk rule |
+| **RS Divergence** | — | — | — | $100K | 1% risk rule | Counter-trend; wider stops |
+| **Multi-Timeframe** | — | — | — | $100K | 1% risk rule | Tight 4H stop = larger share count |
+
+### Kelly Calculation (for Kelly-based funnels)
+
+```
+f* = (b × p − q) / b
+where b = payoff ratio, p = win probability, q = 1 − p
+
+Half-Kelly = f* / 2   (recommended for estimated probabilities)
+Position size ($) = Half-Kelly × Portfolio Value
+Cap at the Max Cap percentage shown above.
+```
+
+**Always use Half-Kelly (f* / 2).** Full Kelly assumes perfect probability estimates; half-Kelly
+achieves 75% of the growth rate with substantially lower drawdown risk.
+
+### Risk-Rule Sizing (for fixed-risk funnels)
+
+```
+Position size ($) = (Portfolio × Risk%) / Stop distance (as fraction of price)
+```
+
+Example: 1% risk on $100K portfolio with stop 5% below entry = $2,000 / 5% = $40,000 position.
+
 ## Reference Implementation
 See `scripts/bet_sizing.py` for computational helpers.

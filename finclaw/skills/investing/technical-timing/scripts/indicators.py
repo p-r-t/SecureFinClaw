@@ -187,6 +187,180 @@ def macd(
 
 
 # ---------------------------------------------------------------------------
+# Fibonacci Retracement Levels
+# ---------------------------------------------------------------------------
+
+class FibLevels(NamedTuple):
+    """Key Fibonacci retracement levels from swing low to swing high."""
+    swing_low: float
+    swing_high: float
+    fib_236: float
+    fib_382: float  # primary entry zone
+    fib_500: float  # primary entry zone
+    fib_618: float  # deep retracement
+    current_price: float | None
+    nearest_level: str | None   # "38.2%", "50.0%", etc. if within ±1%
+    in_entry_zone: bool         # True if price within ±1% of 38.2% or 50.0%
+
+
+def fibonacci_levels(prices: list[float], lookback: int = 120) -> FibLevels:
+    """Compute Fibonacci retracement levels from the most significant swing in the lookback.
+
+    Args:
+        prices: List of closing prices (oldest first).
+        lookback: Number of bars to scan for swing high and low.
+    """
+    window = prices[-lookback:] if len(prices) >= lookback else prices
+    swing_low = min(window)
+    swing_high = max(window)
+    rng = swing_high - swing_low
+
+    fib_236 = swing_high - 0.236 * rng
+    fib_382 = swing_high - 0.382 * rng
+    fib_500 = swing_high - 0.500 * rng
+    fib_618 = swing_high - 0.618 * rng
+
+    current = prices[-1] if prices else None
+    nearest = None
+    in_zone = False
+
+    if current is not None:
+        levels = {"23.6%": fib_236, "38.2%": fib_382, "50.0%": fib_500, "61.8%": fib_618}
+        closest_dist = float("inf")
+        for label, level in levels.items():
+            dist = abs(current - level) / level
+            if dist < closest_dist:
+                closest_dist = dist
+                nearest = label
+        in_zone = (
+            abs(current - fib_382) / fib_382 < 0.01 or
+            abs(current - fib_500) / fib_500 < 0.01
+        )
+
+    return FibLevels(
+        swing_low=swing_low,
+        swing_high=swing_high,
+        fib_236=round(fib_236, 2),
+        fib_382=round(fib_382, 2),
+        fib_500=round(fib_500, 2),
+        fib_618=round(fib_618, 2),
+        current_price=round(current, 2) if current is not None else None,
+        nearest_level=nearest,
+        in_entry_zone=in_zone,
+    )
+
+
+# ---------------------------------------------------------------------------
+# RSI Divergence Detection
+# ---------------------------------------------------------------------------
+
+class DivergenceResult(NamedTuple):
+    """RSI divergence detection result."""
+    bullish_divergence: bool   # price lower low + RSI higher low
+    bearish_divergence: bool   # price higher high + RSI lower high
+    swing_low_1_idx: int | None
+    swing_low_2_idx: int | None
+    price_low_1: float | None
+    price_low_2: float | None
+    rsi_at_low_1: float | None
+    rsi_at_low_2: float | None
+    description: str
+
+
+def _find_local_minima(series: list[float], window: int = 5) -> list[int]:
+    """Find indices of local minima in a series."""
+    minima = []
+    for i in range(window, len(series) - window):
+        if series[i] == min(series[i - window: i + window + 1]):
+            minima.append(i)
+    return minima
+
+
+def _find_local_maxima(series: list[float], window: int = 5) -> list[int]:
+    """Find indices of local maxima in a series."""
+    maxima = []
+    for i in range(window, len(series) - window):
+        if series[i] == max(series[i - window: i + window + 1]):
+            maxima.append(i)
+    return maxima
+
+
+def detect_rsi_divergence(prices: list[float], lookback: int = 60) -> DivergenceResult:
+    """Detect bullish (or bearish) RSI divergence in the most recent lookback bars.
+
+    Bullish divergence: price makes lower low, RSI makes higher low.
+    Bearish divergence: price makes higher high, RSI makes lower high.
+
+    Args:
+        prices: Full closing price series (oldest first). Needs ≥ 50 bars for RSI to stabilize.
+        lookback: Number of recent bars to scan for divergence.
+    """
+    if len(prices) < 30:
+        return DivergenceResult(False, False, None, None, None, None, None, None,
+                                "Insufficient data for divergence detection")
+
+    rsi_result = rsi(prices)
+    rsi_vals = rsi_result.values
+
+    # Work on the recent window
+    prices_window = prices[-lookback:]
+    rsi_window = rsi_vals[-lookback:]
+
+    # Filter out None RSI values
+    valid_pairs = [(p, r) for p, r in zip(prices_window, rsi_window) if r is not None]
+    if len(valid_pairs) < 20:
+        return DivergenceResult(False, False, None, None, None, None, None, None,
+                                "Insufficient RSI data in lookback window")
+
+    price_w = [p for p, _ in valid_pairs]
+    rsi_w = [r for _, r in valid_pairs]
+
+    # Find two most recent swing lows (for bullish divergence)
+    minima = _find_local_minima(price_w, window=3)
+    bullish = False
+    sl1_idx = sl2_idx = p_low1 = p_low2 = r_low1 = r_low2 = None
+
+    if len(minima) >= 2:
+        sl1_idx, sl2_idx = minima[-2], minima[-1]
+        p_low1, p_low2 = price_w[sl1_idx], price_w[sl2_idx]
+        r_low1, r_low2 = rsi_w[sl1_idx], rsi_w[sl2_idx]
+        # Bullish: price lower low + RSI higher low
+        if p_low2 < p_low1 and r_low2 > r_low1:
+            bullish = True
+
+    # Find two most recent swing highs (for bearish divergence)
+    maxima = _find_local_maxima(price_w, window=3)
+    bearish = False
+    if len(maxima) >= 2:
+        sh1_idx, sh2_idx = maxima[-2], maxima[-1]
+        p_high1, p_high2 = price_w[sh1_idx], price_w[sh2_idx]
+        r_high1, r_high2 = rsi_w[sh1_idx], rsi_w[sh2_idx]
+        if p_high2 > p_high1 and r_high2 < r_high1:
+            bearish = True
+
+    if bullish:
+        desc = (f"Bullish divergence: price lower low ({p_low1:.2f} → {p_low2:.2f}) "
+                f"with RSI higher low ({r_low1:.1f} → {r_low2:.1f}). "
+                "Entry trigger: RSI crossing back above 40.")
+    elif bearish:
+        desc = "Bearish divergence: price higher high with RSI lower high."
+    else:
+        desc = "No clear divergence detected in the lookback window."
+
+    return DivergenceResult(
+        bullish_divergence=bullish,
+        bearish_divergence=bearish,
+        swing_low_1_idx=sl1_idx,
+        swing_low_2_idx=sl2_idx,
+        price_low_1=round(p_low1, 2) if p_low1 is not None else None,
+        price_low_2=round(p_low2, 2) if p_low2 is not None else None,
+        rsi_at_low_1=round(r_low1, 1) if r_low1 is not None else None,
+        rsi_at_low_2=round(r_low2, 1) if r_low2 is not None else None,
+        description=desc,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Convenience: full analysis from a price list
 # ---------------------------------------------------------------------------
 
@@ -259,6 +433,26 @@ def analyze(prices: list[float], ticker: str = "UNKNOWN") -> str:
         pct_from_200 = ((current_price - sma200_val) / sma200_val) * 100
         pos = "Above" if current_price >= sma200_val else "Below"
         lines.append(f"SMA-200:      ${sma200_val:.2f}  — Price is {pos} ({pct_from_200:+.1f}%)")
+
+    # Fibonacci levels
+    fib = fibonacci_levels(prices)
+    lines.append("")
+    lines.append(f"Swing Low:    ${fib.swing_low:.2f}  |  Swing High: ${fib.swing_high:.2f}")
+    lines.append(f"Fib 38.2%:    ${fib.fib_382:.2f}  |  Fib 50.0%: ${fib.fib_500:.2f}  |  Fib 61.8%: ${fib.fib_618:.2f}")
+    if fib.in_entry_zone:
+        lines.append(f"→ Price is IN Fibonacci entry zone (38.2%–50.0%) — potential support.")
+    else:
+        lines.append(f"Nearest Fib:  {fib.nearest_level}")
+
+    # RSI Divergence
+    div = detect_rsi_divergence(prices)
+    lines.append("")
+    if div.bullish_divergence:
+        lines.append(f"RSI Divergence: BULLISH — {div.description}")
+    elif div.bearish_divergence:
+        lines.append(f"RSI Divergence: BEARISH — {div.description}")
+    else:
+        lines.append("RSI Divergence: None detected")
 
     return "\n".join(lines)
 
