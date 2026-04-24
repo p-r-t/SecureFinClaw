@@ -95,9 +95,81 @@ framework — understanding whether the business is meeting or beating expectati
 
 ---
 
+## Extended: Gap-History Pattern (Breakout Earnings Funnel)
+
+*Required for the Breakout Earnings Funnel: "does this stock have a pattern of gapping up or down?"*
+
+### Method
+
+1. Fetch the last 8 earnings surprises:
+   ```
+   earnings_calendar(command="surprise", symbol="<TICKER>", limit=8)
+   ```
+
+2. For each reported quarter, fetch the daily price history around the report date:
+   ```
+   yfinance(command="historical", symbol="<TICKER>", start_date="<2 days before>", end_date="<2 days after>", interval="1d")
+   ```
+
+3. Compute the **post-earnings gap:** `(open_day_after / close_day_before) - 1`
+
+4. Classify:
+   - Gap > +3%: Gap Up
+   - Gap < -3%: Gap Down
+   - Otherwise: Muted
+
+5. **Gap pattern summary:**
+   ```
+   Gap Up: [N/8]   Gap Down: [N/8]   Muted: [N/8]
+   Average gap magnitude: ±[X]%
+   Consistent direction: [Yes — usually gaps UP / Yes — usually gaps DOWN / Mixed]
+   ```
+
+**Interpretation for trade setup:**
+- Consistent gap-up history (5/8+): Pre-earnings momentum play valid.
+- Consistent gap-down history: Pre-earnings momentum play risky — prefer post-earnings drift.
+- Mixed: Binary event — consider options hedge or reduced size.
+
+---
+
+## Extended: IV Rank Proxy (Realized Volatility Percentile)
+
+*Note: True IV Rank requires options chain data (paid source). This is a free proxy.*
+
+**Realized Volatility Percentile** approximates whether implied vol is elevated relative to history,
+using the stock's own historical price volatility as a proxy.
+
+### Method
+
+1. Fetch 1 year of daily prices:
+   ```
+   yfinance(command="historical", symbol="<TICKER>", start_date="<1 year ago>", end_date="<today>", interval="1d")
+   ```
+
+2. Compute rolling 30-day realized volatility (annualized):
+   ```
+   For each 30-day window: stdev of daily log returns × sqrt(252)
+   ```
+
+3. Rank the most recent 30-day vol against the 1-year distribution:
+   ```
+   IV_Rank_Proxy = (current_30d_vol − min_30d_vol) / (max_30d_vol − min_30d_vol) × 100
+   ```
+
+4. Interpret:
+   - IV Rank Proxy > 50: Volatility is elevated → options selling favored, long options expensive.
+   - IV Rank Proxy < 30: Volatility is compressed → options buying cheap, breakout setups preferred.
+
+**Caveat:** This proxy uses realized vol, not implied vol. For earnings events, true IV from
+the options market is the proper measure. Flag this limitation explicitly.
+
+---
+
 ## Notes
 
 - If a ticker returns `"error": "No earnings calendar available"` → likely a non-US stock, ETF,
   SPAC, or thinly-traded name not covered by Yahoo Finance.
 - `surprise` only shows **reported** quarters — future dates appear in `calendar`, not `surprise`.
 - BMO = Before Market Open · AMC = After Market Close
+- **IV Rank Proxy limitation:** Uses historical price volatility as a proxy for implied volatility.
+  For a true IV Rank, options chain data from a paid source (e.g., Polygon, Tiingo) is required.

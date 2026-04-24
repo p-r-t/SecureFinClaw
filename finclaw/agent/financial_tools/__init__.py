@@ -15,6 +15,10 @@ from .cloner_tool import ClonerTool
 from .sensitivity_tool import ValuationSensitivityTool
 from .scorecard_tool import FundamentalScorecardTool
 from .screener_tool import ScreenerTool
+from .insider_tool import InsiderTool
+from .relative_strength import RelativeStrengthTool
+from .catalyst_scanner import CatalystScannerTool
+from .spin_tracker import SpinTrackerTool
 
 # Backward-compat alias
 MemeMonitorTool = MemeSearchTool
@@ -23,5 +27,6 @@ __all__ = [
     "YFinanceTool", "EconomicsDataTool", "AKShareTool", "SecEdgarTool",
     "EarningsCalendarTool", "MemeSearchTool", "MemeDataTool",
     "DCFTool", "ClonerTool",
-    "ValuationSensitivityTool", "FundamentalScorecardTool", "ScreenerTool"
+    "ValuationSensitivityTool", "FundamentalScorecardTool", "ScreenerTool",
+    "InsiderTool", "RelativeStrengthTool", "CatalystScannerTool", "SpinTrackerTool",
 ]

@@ -100,9 +100,86 @@ Compare your calculated indicators against this decision matrix:
 - **Overbought ≠ Sell:** An RSI above 70 does not mean the stock is overvalued. It means momentum is extended. In strong uptrends, RSI can stay above 70 for weeks.
 - **Volume confirmation:** If the MACD bullish crossover occurs on above-average volume, the signal is stronger. Mention volume context if available.
 
+---
+
+## Extended: Multi-Timeframe Confluence (MTF) Analysis
+
+*Required for the Multi-Timeframe Confluence Funnel and RS Divergence Funnel.*
+
+For MTF analysis, gather **three timeframes**:
+
+### Weekly (W)
+```
+yfinance(command="historical", symbol="<TICKER>", start_date="<2 years ago>", end_date="<today>", interval="1wk")
+```
+- Compute RSI (14) on weekly closes. Flag if RSI > 50 and trending up (weekly bullish).
+- Compute SMA-50 and SMA-200 on weekly closes.
+
+### Daily (D)
+Standard 6M daily analysis (see Step 1–2 above).
+
+### 4-Hour (4H)
+```
+yfinance(command="historical", symbol="<TICKER>", start_date="<30 days ago>", end_date="<today>", interval="1h")
+```
+Resample the hourly data into 4-hour bars: take the Close of every 4th bar (indices 3, 7, 11, …).
+
+Then on the 4H series:
+- Compute RSI (14). A reset to 40–50 after a daily uptrend = entry zone.
+- Compute EMA-8 (8-period EMA on 4H closes). Price pulling back to EMA-8 = entry trigger.
+- Identify whether price is near prior resistance-turned-support.
+
+### MTF Alignment Rule
+| Timeframe | Bullish Condition |
+|-----------|------------------|
+| Weekly    | RSI > 50, trending up |
+| Daily     | Price above SMA-50 + SMA-200, MACD bullish |
+| 4-Hour    | RSI reset to 40–50, price near EMA-8 or Fib support |
+
+All three aligned = high-confidence entry zone.
+
+---
+
+## Extended: Fibonacci Retracement Levels
+
+Used in the Multi-Timeframe and Relative Strength Divergence funnels as entry triggers.
+
+### Calculation
+1. Identify the **swing low** and **swing high** of the most recent move (use 6M daily data).
+2. Compute key retracement levels:
+   ```
+   range = swing_high - swing_low
+   Fib 23.6% = swing_high - 0.236 × range
+   Fib 38.2% = swing_high - 0.382 × range   ← Primary entry zone
+   Fib 50.0% = swing_high - 0.500 × range   ← Primary entry zone
+   Fib 61.8% = swing_high - 0.618 × range   ← Deep retracement
+   ```
+3. Flag if the current price is within ±1% of the 38.2% or 50.0% level.
+
+**Script:** Execute `scripts/indicators.py` — the `fibonacci_levels()` function computes all levels
+given the swing high and low.
+
+---
+
+## Extended: RSI Divergence Detection
+
+RSI bullish divergence = price makes a **lower low** while RSI makes a **higher low**.
+This is one of the strongest reversal signals, used in the RS Divergence Funnel.
+
+### Detection Method
+1. Identify the two most recent swing lows in the price series (60-day window).
+2. Compare the RSI value at each swing low.
+3. If `price_low_2 < price_low_1` but `rsi_low_2 > rsi_low_1`: **bullish divergence confirmed**.
+4. Entry trigger: RSI crossing back above 40 after the divergence forms.
+
+**Script:** Execute `scripts/indicators.py` — the `detect_rsi_divergence()` function automates this.
+
+---
+
 ## Cross-References
 - **value-investing**: upstream — provides the fundamental "Pass" that justifies looking at entry timing
 - **investment-critic**: upstream — ensures risks have been red-teamed before timing the entry
 - **bet-sizing**: downstream — once timing is confirmed, pass to bet-sizing to determine position size
 - **market-regime**: macro context — if regime is "Bear (Crisis)", technical-timing should default to "Scale In" at most, never "Enter Now"
 - **historical-risk**: realized volatility informs whether current ATR is elevated relative to history
+- **relative_strength** tool: upstream for sector rotation and RS divergence funnels — confirms the stock leads its sector before timing the entry
